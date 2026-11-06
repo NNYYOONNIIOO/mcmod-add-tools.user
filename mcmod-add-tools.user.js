@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MC百科添加工具
 // @namespace    https://www.mcmod.cn/
-// @version      1.4.6
+// @version      1.4.8
 // @description  MC百科添加工具：抓取 CurseForge 项目信息，并批量添加物品资料
 // @match        https://www.mcmod.cn/class/add*
 // @match        https://mcmod.cn/class/add*
@@ -22,7 +22,6 @@
 // @connect      gitlab.com
 // @connect      www.curseforge.com
 // @connect      media.forgecdn.net
-// @connect      edge.forgecdn.net
 // @connect      *
 // ==/UserScript==
 
@@ -36,7 +35,7 @@
   const KEY_ITEM_BATCH_PREFERENCES = 'mcmod_item_batch_preferences';
   const KEY_ITEM_BATCH_COLLAPSED = 'mcmod_item_batch_collapsed';
   const ITEM_BATCH_DB = 'mcmod_item_batch_queue_db';
-  const SCRIPT_VERSION = '1.4.6';
+  const SCRIPT_VERSION = '1.4.8';
   const ITEM_BATCH_MC_VERSIONS = [
     '1.21.11', '1.21.10', '1.21.9', '1.21.8', '1.21.7', '1.21.6', '1.21.5', '1.21.4', '1.21.3', '1.21.2', '1.21.1', '1.21',
     '1.20.6', '1.20.5', '1.20.4', '1.20.3', '1.20.2', '1.20.1', '1.20', '1.19.4', '1.19.3', '1.19.2', '1.19.1', '1.19',
@@ -439,6 +438,7 @@
   }
 
   function batchCreatePanel(id, title) {
+    GM_addStyle('#mcmod-item-batch button.mcb-primary{color:#fff;background:#23644f;border-color:#23644f}#mcmod-item-batch button.mcb-primary:hover:not(:disabled){color:#fff;background:#194f3d;border-color:#194f3d}#mcmod-item-batch button.mcb-primary:focus-visible{outline:2px solid #77a892;outline-offset:2px}');
     const panel = document.createElement('section');
     panel.id = id;
     panel.innerHTML = `<header><strong>${title}</strong><button type="button" class="mcb-close" title="折叠/展开">−</button></header><div class="mcb-body"></div>`;
@@ -637,8 +637,9 @@
     const marker = GM_getValue(KEY_ITEM_BATCH, null);
     if (!marker?.active || String(marker.classId) !== String(classId)) return;
     const { panel, body } = batchCreatePanel('mcmod-item-batch', 'MC百科添加工具 · 批量添加物品');
-    body.innerHTML = `<div id="mcb-status" class="mcb-status"></div><div class="mcb-row" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px"><button id="mcb-skip" type="button" disabled>跳过当前项</button><button id="mcb-stop" type="button">停止批量添加</button><button id="mcb-back" type="button">返回模组页</button></div>`;
+    body.innerHTML = `<div id="mcb-status" class="mcb-status"></div><div class="mcb-row" style="display:flex;flex-wrap:wrap;gap:7px;margin-top:8px"><button id="mcb-submit" class="mcb-primary" type="button" disabled>添加资料</button><button id="mcb-skip" type="button" disabled>跳过当前项</button><button id="mcb-stop" type="button">停止批量添加</button><button id="mcb-back" type="button">返回模组页</button></div>`;
     const status = $('#mcb-status', panel);
+    const submit = $('#mcb-submit', panel);
     const skip = $('#mcb-skip', panel);
     let queue = null;
     let index = Number(marker.index || 0);
@@ -653,7 +654,11 @@
       return latest?.active && String(latest.classId) === String(classId) && latest.sessionId === marker.sessionId
         && Number(latest.index) === index ? latest : null;
     };
-    const refreshSkip = () => { skip.disabled = !queue || !stillCurrent() || pendingSubmissions > 0; };
+    const refreshSkip = () => {
+      const disabled = !queue || !stillCurrent() || pendingSubmissions > 0;
+      submit.disabled = disabled;
+      skip.disabled = disabled;
+    };
     const stopThisQueue = () => {
       let stopped = false;
       if (stillCurrent()) {
@@ -686,6 +691,23 @@
       try {
         if (!advanceQueue('skip')) batchNote(status, '当前队列已变更或正在提交，请检查队列进度。', 'warn');
       } catch (error) { batchNote(status, `无法跳过当前项：${error.message}`, 'warn'); refreshSkip(); }
+    });
+    submit.addEventListener('click', () => {
+      if (submit.disabled || !stillCurrent()) {
+        batchNote(status, '当前队列尚未准备好提交，或已经发生变化。', 'warn');
+        return;
+      }
+      const nativeSubmit = $('#edit-submit-button');
+      if (!nativeSubmit) {
+        batchNote(status, '未找到百科原有的“添加资料”按钮，请确认物品表单已加载。', 'warn');
+        return;
+      }
+      if (nativeSubmit.disabled || nativeSubmit.classList.contains('disabled')) {
+        batchNote(status, '百科正在处理上一次提交或验证提示，请完成后再试。', 'warn');
+        return;
+      }
+      nativeSubmit.click();
+      batchNote(status, '已触发百科原有的“添加资料”流程；请按百科提示完成验证和确认。', 'ok');
     });
     $('#mcb-stop', panel).addEventListener('click', () => {
       if (stopThisQueue()) batchNote(status, '已停止批量添加，当前页面保留不变。', 'ok');
@@ -791,8 +813,9 @@
     #mcmod-cf-helper .mcf-row { display: flex; gap: 7px; margin-top: 8px; }
     #mcmod-cf-helper .mcf-row > * { flex: 1; }
     #mcmod-cf-helper .mcf-row > .mcf-compact { flex: 0 0 auto; min-height: 27px; padding: 3px 7px; font-size: 11px; }
-    #mcmod-cf-helper .mcf-primary { color: #fff; background: #23644f; border-color: #23644f; }
-    #mcmod-cf-helper .mcf-primary:hover { background: #194f3d; }
+    #mcmod-cf-helper button.mcf-primary { color: #fff; background: #23644f; border-color: #23644f; }
+    #mcmod-cf-helper button.mcf-primary:hover:not(:disabled) { color: #fff; background: #194f3d; border-color: #194f3d; }
+    #mcmod-cf-helper button.mcf-primary:focus-visible { outline: 2px solid #77a892; outline-offset: 2px; }
     #mcmod-cf-helper .mcf-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 5px 8px; margin: 10px 0; }
     #mcmod-cf-helper .mcf-checks label { display: flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; }
     #mcmod-cf-helper .mcf-checks input { margin: 0; }
@@ -839,7 +862,6 @@
         <label><input type="checkbox" data-fill="gallery" checked>导入 CF 图库</label>
         <label><input type="checkbox" data-fill="status" checked>官方状态/协议</label>
         <label><input type="checkbox" data-fill="cover" checked>生成封面</label>
-        <label><input type="checkbox" data-fill="modid" checked title="下载 CurseForge 最新 JAR 并扫描标准模组元数据">自动填写 Mod ID</label>
       </div>
       <label><input id="mcf-overwrite" type="checkbox">覆盖已有名称、状态、封面、链接、作者、关系和许可</label>
       <div class="mcf-row">
@@ -1086,7 +1108,7 @@
     return null;
   }
 
-  function parseCurseforgeGallery(html, baseUrl, project = null) {
+  function parseCurseforgeGallery(html, baseUrl, project = null, projectPageHtml = '') {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     if (/just a moment|attention required/i.test(doc.title) || $('#challenge-form, .cf-challenge', doc)) {
       throw new Error('CurseForge 要求浏览器验证，后台请求无法读取图库页面。');
@@ -1097,7 +1119,11 @@
       let url;
       try { url = new URL(String(value).replace(/&amp;/gi, '&'), baseUrl); } catch { return false; }
       if (url.protocol !== 'https:' || url.hostname.toLowerCase() !== 'media.forgecdn.net'
-        || !/^\/attachments\//i.test(url.pathname)) return false;
+        || !/^\/attachments\/\d+\/\d+\//i.test(url.pathname)
+        || !/\.(?:png|jpe?g|gif|webp|avif)$/i.test(url.pathname)) return false;
+      url.pathname = url.pathname.replace(/^(\/attachments\/\d+\/\d+)\/\d+\/\d+\//i, '$1/');
+      url.search = '';
+      url.hash = '';
       const cleanUrl = url.href;
       const name = String(title || '').replace(/\s+/g, ' ').trim();
       const existing = images.find((item) => item.url === cleanUrl);
@@ -1143,6 +1169,27 @@
       if (typeof item === 'string') add(item);
       else add(item?.originalUrl || item?.original_url || item?.raw_url || item?.url || item?.src,
         item?.title || item?.name || item?.alt || '');
+    }
+    const addDescriptionImages = (descriptionHtml) => {
+      const description = String(descriptionHtml || '').replace(/\\u002f/gi, '/').replace(/\\\//g, '/').replace(/&amp;/gi, '&');
+      if (!description) return;
+      const descriptionDoc = new DOMParser().parseFromString(description, 'text/html');
+      for (const image of $$('img', descriptionDoc)) {
+        const title = image.getAttribute('alt') || image.getAttribute('title') || '';
+        const anchor = image.closest('a[href]');
+        if (!add(anchor?.getAttribute('href'), title)) {
+          const source = image.getAttribute('data-original') || image.getAttribute('data-src') || image.getAttribute('src');
+          if (!add(source, title)) addBestSource(image.getAttribute('srcset'), title);
+        }
+      }
+      for (const match of description.matchAll(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)(?:\s+[^)]*)?\)/g)) add(match[2], match[1]);
+      for (const match of description.matchAll(/https?:\/\/media\.forgecdn\.net\/attachments\/[^"'<>\s\\]+/gi)) add(match[0]);
+    };
+    addDescriptionImages(project?.raw?.description);
+    if (projectPageHtml) {
+      const projectDoc = new DOMParser().parseFromString(projectPageHtml, 'text/html');
+      const roots = $$('[class*="description"], [id*="description"], [data-testid*="description"]', projectDoc);
+      for (const root of roots) addDescriptionImages(root.innerHTML);
     }
     if (!images.length) {
       const searchableHtml = String(html).replace(/\\u002f/gi, '/').replace(/\\\//g, '/').replace(/&amp;/gi, '&');
@@ -1397,192 +1444,6 @@
     } finally { URL.revokeObjectURL(objectUrl); }
   }
 
-  async function inflateZipEntry(bytes) {
-    if (typeof DecompressionStream !== 'function') throw new Error('当前浏览器不支持 JAR 元数据解压。');
-    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
-    const chunks = [];
-    let size = 0;
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.length;
-      if (size > 1048576) {
-        await reader.cancel();
-        throw new Error('JAR 元数据文件超过 1 MiB，已停止解析。');
-      }
-      chunks.push(value);
-    }
-    const result = new Uint8Array(size);
-    let offset = 0;
-    for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.length; }
-    return result;
-  }
-
-  async function readJarMetadata(buffer) {
-    const bytes = buffer instanceof ArrayBuffer ? new Uint8Array(buffer) : new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-    const end = Math.max(0, bytes.length - 22 - 65535);
-    let endRecord = -1;
-    for (let offset = bytes.length - 22; offset >= end; offset -= 1) {
-      if (view.getUint32(offset, true) === 0x06054b50) { endRecord = offset; break; }
-    }
-    if (endRecord < 0) throw new Error('下载内容不是可识别的 JAR/ZIP 文件。');
-    const entryCount = view.getUint16(endRecord + 10, true);
-    let cursor = view.getUint32(endRecord + 16, true);
-    if (entryCount === 0xffff || cursor === 0xffffffff) throw new Error('暂不支持 ZIP64 JAR。');
-    const wanted = new Set(['meta-inf/mods.toml', 'meta-inf/neoforge.mods.toml', 'fabric.mod.json', 'quilt.mod.json', 'mcmod.info']);
-    const metadata = {};
-    for (let index = 0; index < entryCount; index += 1) {
-      if (cursor + 46 > bytes.length || view.getUint32(cursor, true) !== 0x02014b50) throw new Error('JAR 中央目录格式无效。');
-      const flags = view.getUint16(cursor + 8, true);
-      const method = view.getUint16(cursor + 10, true);
-      const compressedSize = view.getUint32(cursor + 20, true);
-      const uncompressedSize = view.getUint32(cursor + 24, true);
-      const nameLength = view.getUint16(cursor + 28, true);
-      const extraLength = view.getUint16(cursor + 30, true);
-      const commentLength = view.getUint16(cursor + 32, true);
-      const localOffset = view.getUint32(cursor + 42, true);
-      const nameStart = cursor + 46;
-      const name = new TextDecoder().decode(bytes.subarray(nameStart, nameStart + nameLength)).replace(/\\/g, '/').toLowerCase();
-      cursor = nameStart + nameLength + extraLength + commentLength;
-      if (!wanted.has(name)) continue;
-      if (flags & 1) throw new Error('JAR 元数据被加密，无法扫描。');
-      if (uncompressedSize > 1048576 || compressedSize > bytes.length || localOffset + 30 > bytes.length) {
-        throw new Error('JAR 元数据大小或偏移无效。');
-      }
-      if (view.getUint32(localOffset, true) !== 0x04034b50) throw new Error('JAR 本地文件头无效。');
-      const localNameLength = view.getUint16(localOffset + 26, true);
-      const localExtraLength = view.getUint16(localOffset + 28, true);
-      const dataStart = localOffset + 30 + localNameLength + localExtraLength;
-      const dataEnd = dataStart + compressedSize;
-      if (dataEnd > bytes.length) throw new Error('JAR 元数据内容越界。');
-      const compressed = bytes.subarray(dataStart, dataEnd);
-      let content;
-      if (method === 0) content = compressed;
-      else if (method === 8) content = await inflateZipEntry(compressed);
-      else continue;
-      if (content.length > 1048576) throw new Error('JAR 元数据文件超过 1 MiB，已停止解析。');
-      metadata[name] = new TextDecoder().decode(content);
-    }
-    return metadata;
-  }
-
-  function validModId(value) {
-    const id = String(value || '').trim();
-    return id.length <= 128 && /^[a-z0-9_.-]+$/i.test(id) && /[a-z]/i.test(id) ? id : '';
-  }
-
-  function parseModsToml(text) {
-    const candidates = [];
-    const blocks = String(text).split(/^\s*\[\[mods\]\]\s*$/m).slice(1);
-    for (const block of blocks) {
-      const getString = (key) => {
-        const match = block.match(new RegExp(`^\\s*${key}\\s*=\\s*("(?:\\\\.|[^"\\\\])*"|'[^']*')`, 'm'));
-        if (!match) return '';
-        try { return match[1][0] === '"' ? JSON.parse(match[1]) : match[1].slice(1, -1); }
-        catch { return ''; }
-      };
-      const id = validModId(getString('modId'));
-      if (id) candidates.push({ id, name: getString('displayName') });
-    }
-    return candidates;
-  }
-
-  function parseJarModIds(metadata) {
-    const candidates = [];
-    for (const name of ['meta-inf/mods.toml', 'meta-inf/neoforge.mods.toml']) {
-      if (metadata[name]) candidates.push(...parseModsToml(metadata[name]));
-    }
-    if (metadata['fabric.mod.json']) {
-      try {
-        const manifest = JSON.parse(metadata['fabric.mod.json']);
-        const id = validModId(manifest.id);
-        if (id) candidates.push({ id, name: typeof manifest.name === 'string' ? manifest.name : '' });
-      } catch { /* Ignore malformed metadata and report no confirmed ID. */ }
-    }
-    if (metadata['quilt.mod.json']) {
-      try {
-        const manifest = JSON.parse(metadata['quilt.mod.json']);
-        const loader = manifest.quilt_loader || {};
-        const id = validModId(loader.id);
-        const name = typeof loader.metadata?.name === 'string' ? loader.metadata.name : '';
-        if (id) candidates.push({ id, name });
-      } catch { /* Ignore malformed metadata and report no confirmed ID. */ }
-    }
-    if (metadata['mcmod.info']) {
-      try {
-        const manifest = JSON.parse(metadata['mcmod.info']);
-        const visit = (value) => {
-          if (Array.isArray(value)) { value.forEach(visit); return; }
-          if (!value || typeof value !== 'object') return;
-          const id = validModId(value.modid || value.modId);
-          if (id) candidates.push({ id, name: String(value.name || '') });
-          for (const key of ['modList', 'mods', 'info']) if (value[key]) visit(value[key]);
-        };
-        visit(manifest);
-      } catch { /* Ignore malformed metadata and report no confirmed ID. */ }
-    }
-    const byId = new Map();
-    for (const candidate of candidates) {
-      const current = byId.get(candidate.id) || { id: candidate.id, names: [] };
-      if (candidate.name) current.names.push(candidate.name);
-      byId.set(candidate.id, current);
-    }
-    return Array.from(byId.values()).map((candidate) => ({ ...candidate, names: unique(candidate.names) }));
-  }
-
-  function chooseJarModId(candidates, title) {
-    if (candidates.length === 1) return { id: candidates[0].id, ambiguous: [] };
-    const titleKey = normalized(title);
-    const exact = candidates.filter((candidate) => candidate.names.some((name) => normalized(name) === titleKey));
-    const exactIds = unique(exact.map((candidate) => candidate.id));
-    if (exactIds.length === 1) return { id: exactIds[0], ambiguous: [] };
-    return { id: '', ambiguous: candidates.map((candidate) => candidate.id) };
-  }
-
-  function curseforgeJarUrl(project) {
-    const file = project.file || {};
-    const id = String(file.id || '').trim();
-    const fileName = String(file.name || file.fileName || '').split(/[\\/]/).pop();
-    if (!/^\d{4,12}$/.test(id) || !/\.jar$/i.test(fileName)) return '';
-    for (const candidate of [file.downloadUrl, file.download_url]) {
-      if (!candidate) continue;
-      try {
-        const url = new URL(candidate);
-        if (url.protocol === 'https:' && url.hostname === 'edge.forgecdn.net' && /\.jar$/i.test(url.pathname)) return url.href;
-      } catch { /* Fall back to the standard Forge CDN path. */ }
-    }
-    return `https://edge.forgecdn.net/files/${id.slice(0, -3)}/${id.slice(-3)}/${encodeURIComponent(fileName)}`;
-  }
-
-  async function fillModIdFromLatestJar(project, overwrite) {
-    const file = project.file || {};
-    const url = curseforgeJarUrl(project);
-    if (!url) { note('CurseForge 最新文件不是可识别的 JAR，无法扫描 Mod ID。', 'warn'); return false; }
-    const declaredSize = Number(file.filesize || file.fileSize || 0);
-    if (declaredSize > 83886080) { note('最新 JAR 大于 80 MiB，为避免占用过多内存，已跳过 Mod ID 扫描。', 'warn'); return false; }
-    const response = await request(url, { responseType: 'arraybuffer', timeout: 60000 });
-    if (response.status < 200 || response.status >= 300 || !response.response) throw new Error(`JAR 下载失败（HTTP ${response.status}）。`);
-    let buffer;
-    if (response.response instanceof ArrayBuffer) buffer = response.response;
-    else if (ArrayBuffer.isView(response.response)) {
-      const view = new Uint8Array(response.response.buffer, response.response.byteOffset, response.response.byteLength);
-      buffer = view.slice().buffer;
-    } else if (response.response instanceof Blob) buffer = await response.response.arrayBuffer();
-    if (!buffer || buffer.byteLength > 83886080) throw new Error('下载的 JAR 大于 80 MiB，已停止解析。');
-    const candidates = parseJarModIds(await readJarMetadata(buffer));
-    if (!candidates.length) { note('最新 JAR 中没有识别到 Forge、NeoForge、Fabric、Quilt 或旧版 Forge 的 Mod ID。', 'warn'); return false; }
-    const chosen = chooseJarModId(candidates, project.title);
-    if (!chosen.id) { note(`最新 JAR 中发现多个 Mod ID，无法确定项目主 ID：${chosen.ambiguous.join('、')}。`, 'warn'); return false; }
-    const field = findMultiField('modid');
-    if (!field) { note(`扫描到 Mod ID：${chosen.id}；未找到百科 Mod ID 输入框，请手动填写。`, 'warn'); return false; }
-    const current = String(field.value || '').split(',').map((value) => value.trim()).filter(Boolean);
-    if (current.includes(chosen.id)) { note(`百科 Mod ID 已包含 ${chosen.id}。`, 'ok'); return true; }
-    if (!overwrite && current.length) { note(`扫描到 Mod ID：${chosen.id}；已有 Mod ID 未覆盖，请核对。`, 'warn'); return false; }
-    if (!setValue(field, chosen.id, overwrite)) { note(`扫描到 Mod ID：${chosen.id}，但未能写入字段。`, 'warn'); return false; }
-    note(`已从 CurseForge 最新 JAR 元数据读取并填写 Mod ID：${chosen.id}。`, 'ok');
-    return true;
-  }
 
   function coverEdgeStyle(image) {
     const sample = document.createElement('canvas');
@@ -2489,15 +2350,20 @@
     return title.textContent.trim() === condition ? group : null;
   }
 
-  function addRelation(name, group) {
-    return queueCommonSearch(() => addRelationInQueue(name, group));
+  function addRelation(name, group, relationType = '1') {
+    return queueCommonSearch(() => addRelationInQueue(name, group, relationType));
   }
 
-  async function addRelationInQueue(name, group) {
+  async function addRelationInQueue(name, group, relationType = '1') {
     const existing = $$('.relation-group li[data-id]', group)
-      .some((row) => [row.textContent, ...$$('a, span', row).map((item) => item.textContent)]
+      .find((row) => [row.textContent, ...$$('a, span', row).map((item) => item.textContent)]
         .some((value) => normalized(value) === normalized(name)));
-    if (existing) return true;
+    if (existing) {
+      const type = $('select.relation-row-type', existing);
+      if (type && setSelectValue(type, relationType)) return true;
+      note(`已有 ${name}，但无法确认关系类型；请手动检查。`, 'warn');
+      return false;
+    }
     const trigger = getCommonSelect('class_relation', group);
     if (!trigger) { note(`找不到模组关系搜索控件：${name}`, 'warn'); return false; }
     let form = await openSearch(trigger, name);
@@ -2520,22 +2386,26 @@
     if (!/^\d+$/.test(id || '') || id === '0') { note(`百科搜索结果没有有效 ID：${name}`, 'warn'); return false; }
     const existingId = $$('.relation-group li[data-id]', group).find((row) => row.getAttribute('data-id') === id);
     if (existingId) {
-      if ($('select.relation-row-type', existingId)?.value !== '1') note(`已有 ${name} 的百科关系，请核对关系类型。`, 'warn');
-      return true;
+      const type = $('select.relation-row-type', existingId);
+      if (type && setSelectValue(type, relationType)) return true;
+      note(`已有 ${name} 的百科关系，但无法设置关系类型，请手动检查。`, 'warn');
+      return false;
     }
     result.click();
     await sleep(80);
     let added = $$('.relation-group li[data-id]', group).find((row) => row.getAttribute('data-id') === id);
     if (!added && typeof pageWindow.addClassRelation === 'function' && pageWindow.jQuery) {
       try {
-        pageWindow.addClassRelation(id, result.textContent.trim(), pageWindow.jQuery($('.relation-group', group)), 1);
+        pageWindow.addClassRelation(id, result.textContent.trim(), pageWindow.jQuery($('.relation-group', group)), Number(relationType));
         added = $$('.relation-group li[data-id]', group).find((row) => row.getAttribute('data-id') === id);
       } catch { /* Report a failed insertion below. */ }
     }
     if (!added) { note(`已找到 ${name}，但百科未添加关系，请手动选择。`, 'warn'); return false; }
     const type = $('select.relation-row-type', added);
-    if (!type || !setSelectValue(type, '1')) { note(`已找到 ${name}，但无法确认前置类型，请手动检查。`, 'warn'); return false; }
-    note(`已添加前置候选：${name}；请核对其适用版本。`, 'ok');
+    const typeLabel = pageWindow.PublicLangData?.class?.relation?.list?.[relationType]
+      || ({ '1': '前置', '2': '拓展', '3': '联动' }[relationType] || '模组关系');
+    if (!type || !setSelectValue(type, relationType)) { note(`已找到 ${name}，但无法确认${typeLabel}类型，请手动检查。`, 'warn'); return false; }
+    note(`已添加${typeLabel}候选：${name}；请核对其适用版本。`, 'ok');
     return true;
   }
 
@@ -2603,10 +2473,10 @@
     const found = unique([...required, ...optional]).length;
     if (total && !found) throw new Error('依赖页面有数据，但未能识别依赖名称或类型。');
     if (total !== null && found < total) note(`CurseForge 显示 ${total} 项依赖，本次解析到 ${found} 项；请检查分页或其他关系类型。`, 'warn');
-    if (optional.length) note(`可选依赖请手动核对关系：${unique(optional).join('、')}`, 'warn');
     const tags = asArray(project.file?.versions).map(String);
     return {
       names: unique(required),
+      optionalNames: unique(optional),
       versions: minecraftVersions(tags),
       loaders: unique(tags.filter((tag) => /^(forge|fabric|quilt|neoforge|cleanroom)$/i.test(tag)))
     };
@@ -3084,10 +2954,6 @@
       if (!$('#mcf-ai-source', panel).value.trim()) $('#mcf-ai-source', panel).value = descriptionMarkdown(project.raw.description, source.canonicalUrl);
       note(`项目：${project.title}${project.date ? `；最近文件更新 ${project.date.toLocaleDateString()}` : '；未取得文件更新时间'}`, 'ok');
       if (project.raw.last_fetch) note(`数据来源缓存更新时间：${project.raw.last_fetch}`);
-      const modIdTask = fill('modid')
-        ? fillModIdFromLatestJar(project, overwrite).catch((error) => note(`自动填写 Mod ID 失败：${error.message}`, 'warn'))
-        : Promise.resolve();
-
       const dependencyUrl = `${source.canonicalUrl}/relations/dependencies`;
       const galleryUrl = source.canonicalUrl + '/gallery';
       const [pageResult, dependencyResult, galleryResult] = await Promise.allSettled([
@@ -3120,10 +2986,20 @@
       generatedGallery = [];
       generatedGalleryHtml = '';
       if (fill('gallery')) {
+        let galleryHtml = '';
         if (galleryResult.status === 'fulfilled') {
-          try { generatedGallery = parseCurseforgeGallery(galleryResult.value, galleryUrl, project); }
-          catch (error) { note(`CurseForge 图库不可读：${error.message}`, 'warn'); }
+          galleryHtml = galleryResult.value;
         } else note(`CurseForge 图库不可读：${galleryResult.reason.message}`, 'warn');
+        try {
+          generatedGallery = parseCurseforgeGallery(galleryHtml, galleryUrl, project,
+            pageResult.status === 'fulfilled' ? pageResult.value : '');
+        } catch (error) {
+          note(`CurseForge 图库不可读：${error.message}`, 'warn');
+          if (pageResult.status === 'fulfilled') {
+            try { generatedGallery = parseCurseforgeGallery('', galleryUrl, project, pageResult.value); }
+            catch (descriptionError) { note(`CurseForge 正文图片不可读：${descriptionError.message}`, 'warn'); }
+          }
+        }
         if (generatedGallery.length) {
           try {
             const imported = await importGalleryImages(generatedGallery);
@@ -3243,30 +3119,40 @@
         if (!dependencyData && runtime.dependencies.length) {
           dependencyData = {
             names: await modrinthDependencyNames(runtime.dependencies),
+            optionalNames: [],
             versions: runtime.dependencyVersions,
             loaders: runtime.dependencyLoaders
           };
         }
-        const dependencyNames = unique(dependencyData?.names || []).filter((name) => normalized(name) !== normalized(project.title));
+        const requiredNames = unique(dependencyData?.names || [])
+          .filter((name) => normalized(name) !== normalized(project.title));
+        const requiredKeys = new Set(requiredNames.map(normalized));
+        const optionalNames = unique(dependencyData?.optionalNames || [])
+          .filter((name) => normalized(name) !== normalized(project.title) && !requiredKeys.has(normalized(name)));
+        const dependencyNames = unique([...requiredNames, ...optionalNames]);
         if (dependencyNames.length) {
           if (overwrite && clearExistingEntries('relations')) note('已清除原有模组关系。');
           const condition = relationCondition(project, runtime, dependencyData);
           if (pageDependencies) {
             const generalCondition = pageWindow.PublicLangData?.global_version || '通用';
             note(condition === generalCondition
-              ? 'CurseForge 关系列表是项目级信息，已作为通用前置候选，请核对适用范围。'
-              : 'CurseForge 关系列表是项目级信息，已按最新文件版本建立前置候选，请核对其他版本。', 'warn');
+              ? 'CurseForge 关系列表是项目级信息，已作为通用关系候选，请核对适用范围。'
+              : 'CurseForge 关系列表是项目级信息，已按最新文件版本建立关系候选，请核对其他版本。', 'warn');
           }
           const group = await getRelationGroup(condition);
           if (!group) {
-            note(`无法建立带版本条件的关系组，请手动添加前置：${dependencyNames.join('、')}`, 'warn');
+            note(`无法建立带版本条件的关系组，请手动添加前置/联动：${dependencyNames.join('、')}`, 'warn');
           } else {
-            for (const name of dependencyNames) {
-              try { await addRelation(name, group); }
+            for (const name of requiredNames) {
+              try { await addRelation(name, group, '1'); }
+              catch (error) { note(`${name}：${error.message}`, 'warn'); }
+            }
+            for (const name of optionalNames) {
+              try { await addRelation(name, group, '3'); }
               catch (error) { note(`${name}：${error.message}`, 'warn'); }
             }
           }
-        } else note('没有取得可确认的必需依赖；未自动添加模组关系。', 'warn');
+        } else note('没有取得可确认的必需或可选依赖；未自动添加模组关系。', 'warn');
       }
 
       if (fill('status')) {
@@ -3313,7 +3199,6 @@
           } else note(`读取到源码许可 ${sourceLicense.id}，但未能填写；请手动检查。`, 'warn');
         }
       }
-      await modIdTask;
       note('自动填表完成。请检查每个候选字段及百科规范，再手动提交。', 'ok');
     } catch (error) {
       note(error && error.message ? error.message : String(error), 'warn');
